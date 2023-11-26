@@ -1,0 +1,660 @@
+---
+title: "GBP_Corona_analysis"
+author: "Minal Singhania"
+date: "19/11/2023"
+output: pdf_document
+---
+
+source required libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(survey)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(tableone)
+library(ggplot2)
+library(stats)
+library(srvyr)
+library(MatchIt)
+library(lmtest)
+library(sandwich)
+library(Rcpp)
+library(tidyverse)
+library(survey)
+```
+
+Documentation on variables used.
+ccgic1 - legal form of the company    
+ccgic2 - annual revenue in previous calendar year
+ccgic3 - category for revenue
+ccgic6 - no of employees
+industry_WZ08 - industry classification
+
+corona relief measures
+
+cgm1 Corona emergency relief
+cgm2 interim aid
+cgm3 short-time work/ allowance
+cgm7 KfW special program
+cgm9 others
+cgm10 no measures requested/received
+cgm11 refund tax prepayment for 2020
+cgm12 immediate loss carryback
+cgm13 deferral tax payments
+cgm401 new start assistance
+
+variables to capture dates when the funds have been requested
+cgm1_H_1_2020, cgm1_H_2_2020, cgm1_H_1_2021, cgm1_H_2_2021 
+
+
+Key KPI used to which are the dependent variables
+ccd1 - Expected change in revenue in %
+ccd2 _ Expected change in profit in % 
+ccd9 - Expected change in investment in %
+ccd6 - Expected change in employee count 
+
+Information if received funds are sufficient to survive. 
+cgm27 - Funds were sufficient,
+cgm28 & cgm29 - Funds not sufficient,
+cgm30 - No information
+
+Select required variables and filter on wave 4
+For cgm1 to cgm13( Aid provided to the company) there are 5 variables depicting time period when the Aid was given, select the date corresponding when Aid was provided.
+
+perform data cleanup by replacing 9998, 9996 etc to NA
+
+```{r Data Prepration}
+#data <- read.csv("~/Documents/Project_Consulting/gbp_data.csv")
+
+data <- read.csv("C:/Users/Minal/gbp_data.csv")
+
+data_sel <- data %>% filter(wave==4)%>% select(gbpid, StartDate, EndDate, AGS, PLZ, weight, ccgic3, ccgic6, industry_WZ08,
+                                               cgm1, cgm2, cgm3, cgm7, cgm9, cgm10, cgm11, cgm12, cgm13, 
+                                               cos30,	cos31,	cos32,	cos33,	cos34,	cos35,	cos36,	cos37,	cos38,	cos39,
+                                               ccd0, ccd1, ccd2, ccd9, ccd6,
+                                               cgm401, cgm1_H_1_2020, cgm1_H_2_2020, cgm1_H_1_2021, cgm1_H_2_2021, cgm1_H_1_2022,
+                                               cgm2_H_1_2020, cgm2_H_2_2020, cgm2_H_1_2021, cgm2_H_2_2021, cgm2_H_1_2022,
+                                               cgm3_H_1_2020, cgm3_H_2_2020, cgm3_H_1_2021, cgm3_H_2_2021, cgm3_H_1_2022,
+                                               cgm7_H_1_2020, cgm7_H_2_2020, cgm7_H_1_2021, cgm7_H_2_2021, cgm7_H_1_2022,
+                                               cgm9_H_1_2020, cgm9_H_2_2020, cgm9_H_1_2021, cgm9_H_2_2021, cgm9_H_1_2022,
+                                               cgm11_H_1_2020, cgm11_H_2_2020, cgm11_H_1_2021, cgm11_H_2_2021, cgm11_H_1_2022,
+                                               cgm12_H_1_2020, cgm12_H_2_2020, cgm12_H_1_2021, cgm12_H_2_2021, cgm12_H_1_2022,
+                                               cgm13_H_1_2020, cgm13_H_2_2020, cgm13_H_1_2021, cgm13_H_2_2021, cgm13_H_1_2022,
+                                               cgm401_H_1_2020, cgm401_H_2_2020, cgm401_H_1_2021, cgm401_H_2_2021, cgm401_H_1_2022, cgm27, cgm28, cgm29, cgm30)%>%
+  mutate(ccgic3 = gsub("Dropout",0,gsub("Refusal", 0, gsub("Does not apply", 0, gsub("I dont know", 0, ccgic3)))),
+         ccd1 = gsub("Dropout",NA,gsub("Refusal", NA, gsub("Does not apply", NA, gsub("I dont know", NA, ccd1)))),
+         ccd2 = gsub("Dropout",NA,gsub("Refusal", NA, gsub("Does not apply", NA, gsub("I dont know", NA, ccd2)))),
+         ccd6 = gsub("Dropout",NA,gsub("Refusal", NA, gsub("Does not apply", NA, gsub("I dont know", NA, ccd6)))),
+         ccd9 = gsub("Dropout",NA,gsub("Refusal", NA, gsub("Does not apply", NA, gsub("I dont know", NA, ccd9)))),
+         AGS = as.character(AGS),
+         across(c(cgm1_H_1_2020, cgm1_H_2_2020, cgm1_H_1_2021, cgm1_H_2_2021, cgm1_H_1_2022,
+                  cgm2_H_1_2020, cgm2_H_2_2020, cgm2_H_1_2021, cgm2_H_2_2021, cgm2_H_1_2022,
+                  cgm3_H_1_2020, cgm3_H_2_2020, cgm3_H_1_2021, cgm3_H_2_2021, cgm3_H_1_2022,
+                  cgm7_H_1_2020, cgm7_H_2_2020, cgm7_H_1_2021, cgm7_H_2_2021, cgm7_H_1_2022,
+                  cgm9_H_1_2020, cgm9_H_2_2020, cgm9_H_1_2021, cgm9_H_2_2021, cgm9_H_1_2022,
+                  cgm11_H_1_2020, cgm11_H_2_2020, cgm11_H_1_2021, cgm11_H_2_2021, cgm11_H_1_2022,
+                  cgm12_H_1_2020, cgm12_H_2_2020, cgm12_H_1_2021, cgm12_H_2_2021, cgm12_H_1_2022,
+                  cgm13_H_1_2020, cgm13_H_2_2020, cgm13_H_1_2021, cgm13_H_2_2021, cgm13_H_1_2022,
+                  cgm401_H_1_2020, cgm401_H_2_2020, cgm401_H_1_2021, cgm401_H_2_2021, cgm401_H_1_2022, ccd9, ccd6, industry_WZ08, AGS, cgm27, cgm28, cgm29, cgm30), function(x) ifelse((x=="-9996" |x=="-9997" |x=="-9998" | x=="-9999" |is.na(x) | x==""), NA, x))
+        )
+      
+      drop_col <- colnames(data_sel[10:83]) # Create a list of columns which are not needed in the final dataset and already converted to categorical variables
+      
+      
+      
+       data_cat<- data_sel%>% mutate(Revenue_prevYr = case_when(ccgic3 %in% c(1,2,3,4,5,6,7,8,9,10,11,12,13,14) ~ ccgic3,
+                                                                 TRUE  ~ NA), 
+                                    
+                                    EmployeeCNT_cat = case_when(ccgic6 <= 5 ~ "Small",
+                                                                ccgic6 == 6 ~"Medium",
+                                                                ccgic6 > 6 ~ "Large")%>% as.factor(),
+                                    
+                                    company_size = case_when((ccgic3 <= 5 & ccgic6 <= 3) ~ "Micro",
+                                                              (ccgic3 <= 8 & ccgic6 <= 5) ~ "Small",
+                                                              (ccgic3 <= 12 & ccgic6 <= 6) ~ "Medium",
+                                                              (ccgic3 > 12 | ccgic6 > 6) ~ "Large",
+                                                              TRUE  ~ "Others")%>% as.factor(), #define company size using European community 2003 guidelines
+                                    
+                                    industry_WZ08_cat = ifelse(!is.na(industry_WZ08) ,substr(industry_WZ08,1,1), NA )%>% as.factor(),
+                                    fed_state = ifelse(!is.na(AGS), substr(str_pad(AGS,8, "left", '0'), 1,2), NA),
+                                    # LL: I changed it the below variables to numeric, which is prepared for plot creating
+                                    Change_Revenue = ccd1%>% as.numeric(),
+                                    Change_Employee_CNT =ccd2%>% as.numeric(),
+                                    Change_Investment =ccd9%>% as.numeric(),
+                                   
+                                    Change_profit = ccd6%>% as.numeric(),
+                                    
+                                   
+                                    
+                                    Aid_EmergencyRf = ifelse(cgm1 %in% c('1', '0'), cgm1, 0 ),
+                                    Aid_Interim = ifelse(cgm2 %in% c('1', '0'), cgm2, 0 ),
+                                    Aid_Allowance = ifelse(cgm3 %in% c('1', '0'), cgm3, 0 ),
+                                    Aid_KfW = ifelse(cgm7 %in% c('1', '0'), cgm7, 0 ),
+                                    Aid_Others = ifelse(cgm9 %in% c('1', '0'), cgm9, 0 ),
+                                    Aid_TaxRefund = ifelse(cgm11 %in% c('1', '0'), cgm11, 0 ),
+                                    Aid_LossCarry = ifelse(cgm12 %in% c('1', '0'), cgm12, 0 ),
+                                    Aid_Deferral = ifelse(cgm13 %in% c('1', '0'), cgm13, 0 ),
+                                    Aid_NewAssistance = ifelse(cgm401 %in% c('1', '0'), cgm401, 0 ),
+                                    
+                                                                  
+                                    #Capture if the received Aid was sufficient to overcome the crisis
+                                    Survival = case_when(cgm27 == 1 ~ 'Sufficient',
+                                                         (cgm28 == 1 | cgm29 == 1) ~ 'Not Sufficient',
+                                                         TRUE ~ 'No info')
+                                    
+      )%>%select(-drop_col)
+      
+      
+      
+      # Add information on Industry classification
+      
+      Industry <- data.frame(IndustryDef = c('Agriculture, forestry, and fishing',
+                                             'Mining and quarrying',
+                                             'Manufacturing',
+                                             'Electricity, gas, steam, and air-conditioning supply',
+                                             'Water supply, sewerage, waste management, and remediation',
+                                       'Construction',
+                                       'Wholesale and retail trade, repair of motor vehicles and motorcycles',
+                                       'Transportation and storage',
+                                       'Accommodation and food service',
+                                       'Information and communication',
+                                       'Financial and insurance',
+                                       'Real estate',
+                                       'Professional, scientific, and technical',
+                                       'Administrative and support service',
+                                       'Public administration and defence, social security',
+                                       'Education',
+                                       'Human health and social work',
+                                       'Arts, entertainment, recreation',
+                                       'Other services',
+                                       'Households as employers',
+                                       'Extra-territorial organisations and bodies'),
+                       Industry_cat = c('A','B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L','M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'))
+data_cat1 <- data_cat %>% left_join(Industry, by = c("industry_WZ08_cat" ="Industry_cat")) %>% select(-c( ccgic3, ccgic6)) %>%
+  
+# define variable funding when one of the 3 interested funds were opted by the companies 
+  
+           mutate(Funding = case_when(((Aid_EmergencyRf =='1' & !is.na(Aid_EmergencyRf))| (Aid_Allowance=='1' & !is.na(Aid_Allowance)) |(Aid_KfW =='1' & !is.na(Aid_KfW)))  ~ 1,
+                                    ((Aid_Others =='1' & !is.na(Aid_Others)) | (Aid_TaxRefund =='1' & !is.na(Aid_TaxRefund)) | (Aid_LossCarry =='1' & !is.na(Aid_LossCarry)) |  (Aid_Interim =='1' & !is.na(Aid_Interim)) | (Aid_Deferral =='1' & !is.na(Aid_Deferral)) | (Aid_NewAssistance =='1' & !is.na(Aid_NewAssistance)))  ~ 2, 
+                                    TRUE ~ 0)%>% as.factor(),
+                  
+  
+               
+         Funding_bin = paste0(Aid_KfW ,Aid_EmergencyRf, Aid_Allowance),
+         fed_state = case_when(fed_state == "01" ~ "Schleswig-Holstein",
+                               fed_state == "02" ~ "Hamburg",
+                               fed_state == "03" ~ "Niedersachsen",
+                               fed_state == "04" ~ "Bremen",
+                               fed_state == "05" ~ "Nordrhein-Westfalen",
+                               fed_state == "06" ~ "Hessen",
+                               fed_state == "07" ~ "Rheinland-Pfalz",
+                               fed_state == "08" ~ "Baden-Wuerttemberg",
+                               fed_state == "09" ~ "Bayern",
+                               fed_state == "10" ~ "Saarland",
+                               fed_state == "11" ~ "Berlin",
+                               fed_state == "12" ~ "Brandenburg",
+                               fed_state == "13" ~ "Mecklenburg",
+                               fed_state == "14" ~ "Sachsen",
+                               fed_state == "15" ~ "Sachsen-Anhalt",
+                               fed_state == "16" ~ "Thuringen",
+                               TRUE ~ "Not Specified"),
+         
+  #Collape industrial sectors into broader areas       
+         industry_sec = case_when(
+                            (industry_WZ08_cat == 'A') ~ 'Agriculture',
+                            (industry_WZ08_cat == 'C') ~ 'Manufacturing',
+                            (industry_WZ08_cat == 'F') ~ 'Construction',
+                            (industry_WZ08_cat %in% c('B','D', 'E')) ~ 'Mining, Elec, Water',
+                            (industry_WZ08_cat %in% c('G', 'H', 'I', 'J', 'K', 'L', 'M', 'N')) ~ 'Market Services',
+                            (industry_WZ08_cat %in% c('O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V')) ~ 'Non Market Services',
+                            TRUE ~ 'Others')
+         
+                            
+        
+                                  ) %>% select (-c( industry_WZ08_cat, industry_WZ08)) 
+
+
+
+#data_cat1$Funding <- factor(data_cat1$Funding, levels = c(0,1), labels = c("No", "Yes"))
+
+```
+
+
+
+## Create Data descriptives
+
+```{r Count Check}
+
+data %>% filter(wave==4) %>% count()
+
+data_cat1 %>% count()
+
+```
+
+
+
+```{r Data filteration}
+#Filter for missing or incomplete data and funding types which we are not interested 
+data_cat1 <- data_cat1 %>% filter(Funding != 2) %>% filter(industry_sec != "Mining, Elec, Water", company_size != "Others", fed_state != 'Not Specified') 
+
+
+data_cat1 %>% count()
+
+
+```
+
+Create Survey design using weight
+```{r create survey design using weights}
+
+#Create dataframe using survey design
+data_kpi <-data_cat1[!is.na(data_cat1$weight),]
+#data_survey <- data_kpi %>% as_survey(weights = c(weight)) %>% as.data.frame()
+data_survey <- data_kpi %>% as_survey(weights = c(weight))
+
+# count of records after applying weights
+data_kpi %>% count()
+
+```
+
+## Perform Exploratory data analysis
+```{r Descriptives for different Fundings with weight"}
+
+cols = c("Funding_bin" , "Funding", "Survival", "industry_sec" , "company_size", "Aid_EmergencyRf", "Aid_Interim", "Aid_Allowance",
+                                    "Aid_KfW" ,
+                                    "Aid_Others" ,
+                                    "Aid_TaxRefund" ,
+                                    "Aid_LossCarry" ,
+                                    "Aid_Deferral",
+                                    "Aid_NewAssistance", "fed_state")
+for(i in seq_along(cols)){
+FORMULA= as.formula(paste("~",cols[i]))
+print(svytable(FORMULA, design= data_survey)) }
+print(prop.table(svytable(FORMULA, design= data_survey)))
+
+
+```
+
+
+
+```{r Create Data descriptives using weights}
+
+
+
+table1 <- data_kpi %>%
+  as_survey(weights = c(weight)) %>%
+  group_by(Funding ) %>%
+  summarise_at(vars(Change_Revenue, Change_profit), list(name = survey_mean), na.rm=TRUE)
+
+table1
+
+
+
+```
+
+
+
+
+```{r revenue distribution with and without funding weights}
+
+med_chg_revenue <- data_survey[, c("Funding", "Change_Revenue")] %>% 
+  group_by(Funding) %>%
+  summarize(median=survey_mean(Change_Revenue, na.rm = T))
+
+
+data_cat1 %>% filter(!is.na(Change_Revenue), !is.na(weight) ) %>% group_by(Funding) %>% 
+ggplot( mapping =aes(x = Change_Revenue, weight = weight, color = Funding))+  geom_density() + 
+  #scale_color_manual(values = c("#868686FF", "#EFC000FF"))+
+  labs(x= "Expected Revenue Change",
+       subtitle="Expected Revenue Change with and without Funding")+
+  theme(legend.position="bottom")+
+  geom_vline(data=med_chg_revenue, aes(xintercept=median, color=Funding),
+             linetype="dashed")
+
+
+
+
+```
+
+
+
+```{r histogram change profit}
+svyhist(~Change_Revenue,design = data_survey,
+breaks = c(-100,-50,  -20, -10, 0,10, 20, 50,100),
+main="Distribution of Change in Revenue",
+xlab="Change in Revenue"
+)
+
+svyhist(~Change_profit,design = data_survey,
+breaks = c(-100,-50, -20, -10, 0,10, 20, 50,100),
+main="Distribution of Change in Profit",
+xlab="Change in Profit"
+)
+```
+
+
+
+```{r Weighted profit distribution with and without funding }
+
+med_chg_profit <- data_survey[, c("Funding", "Change_profit")] %>% 
+  group_by(Funding) %>%
+  summarize(median=survey_mean(Change_profit, na.rm = T))
+
+
+
+data_cat1 %>% filter(!is.na(Change_profit), !is.na(weight) ) %>% group_by(Funding) %>% 
+ggplot( mapping =aes(x = Change_profit, weight = weight, color = Funding))+  geom_density() + 
+  #scale_color_manual(values = c("#868686FF", "#EFC000FF"))+
+  labs(x= "Expected Profit Change",
+       subtitle="Expected Profit Change with and without Funding")+
+  theme(legend.position="bottom")+
+  geom_vline(data=med_chg_profit, aes(xintercept=median, color=Funding),
+             linetype="dashed")
+
+
+```
+
+
+
+```{r Weighted Aid vs Industry sector}
+
+out_indstry <- data_survey[, c("industry_sec", "Funding")] %>% 
+group_by(col1 = factor(industry_sec), Funding) %>%  
+  summarize(n = survey_total(na.rm = T)) %>% as.data.frame()
+
+out_indstry %>% mutate(col4 = prop.table(n)) %>%  
+  ggplot(aes(x = col1, y = col4, fill = Funding, label = scales::percent(col4))) +  
+  geom_col(position = 'dodge') +  
+  geom_text(aes(x = col1, y = col4, fill = Funding, label = scales::percent(col4)), vjust= 0.5,hjust= 0, size = 3, position = position_dodge(width = 1) ) +  
+  scale_y_continuous(labels = scales::percent) +
+  coord_flip() +
+  labs(y="Percentage", x="Industrial Sector", title="Allocation of Funding across different Industries")+ theme_minimal()+
+theme(plot.title = element_text(hjust = 1.0))
+
+```
+
+
+
+
+```{r weighted Aid vs Company size}
+
+out_company <- data_survey[, c("company_size", "Funding")] %>% 
+group_by(col1 = factor(company_size), Funding) %>%  
+  summarize(n = survey_total(na.rm = T)) %>% as.data.frame()
+
+  out_company %>% mutate(col4 = prop.table(n)) %>%  
+  ggplot(aes(x = col1, y = col4, fill = Funding, label = scales::percent(col4))) +  
+  geom_col(position = 'dodge') +  
+  geom_text(aes(x = col1, y = col4, fill = Funding, label = scales::percent(col4)), vjust= 0.5,hjust= 0, size = 3, position = position_dodge(width = 1) ) +  
+  scale_y_continuous(labels = scales::percent) +
+  coord_flip() +
+  labs(y="Percentage", x="Company Size", title="Allocation of Funding based on Company Size")+ theme_minimal()+
+theme(plot.title = element_text(hjust = 1.0))
+
+```
+
+
+
+```{r Aid vs Federal state}
+
+
+data_survey[, c("fed_state", "Funding")] %>% 
+group_by(col1 = factor(fed_state), Funding) %>%  
+  summarize(n = survey_total(na.rm = T)) %>%
+  mutate(col4 = prop.table(n)) %>%  
+  ggplot(aes(x = col1, y = col4, fill = Funding, label = scales::percent(col4))) +  
+  geom_col(position = 'dodge') +  
+  geom_text(aes(x = col1, y = col4, fill = Funding, label = scales::percent(col4)), vjust= 0.5,hjust= 0, size = 3, position = position_dodge(width = 1) ) +  
+  scale_y_continuous(labels = scales::percent) +
+  coord_flip() +
+  labs(y="Percentage", x="Federal State", title="Allocation of Funding across federal states of Germany")+ theme_minimal()+
+theme(plot.title = element_text(hjust = 1.0))
+
+
+
+```
+
+
+
+
+
+```{r proportion table between Industry and company size}
+
+
+table_ind_xtabs <- svytable(~industry_sec +company_size, data_survey)
+round(prop.table(table_ind_xtabs,),2)
+
+
+```
+
+```{r box plot revenue distribution across company size using weights}
+
+ggplot(data_cat1[data_cat1$Funding ==c(0,1), ], aes(x = factor(Funding), y = Change_Revenue, weight = weight ))+  geom_boxplot() + 
+  facet_grid(~company_size)
+  #scale_color_manual(values = c("#868686FF", "#EFC000FF"))+
+  labs(x= "Expected Revenue Change",
+       subtitle="Expected Revenue Change with and without Funding")+
+  theme(legend.position="bottom")
+  
+```
+
+```{r box plot profit distribution across company size using weights}
+
+ggplot(data_cat1[data_cat1$Funding ==c(0,1), ], aes(x = factor(Funding), y = Change_profit, weight = weight ))+  geom_boxplot() + 
+  facet_grid(~company_size)
+  #scale_color_manual(values = c("#868686FF", "#EFC000FF"))+
+  labs(x= "Expected Profit Change",
+       subtitle="Expected Profit Change with and without Funding")+
+  theme(legend.position="bottom")
+  
+```
+
+```{r box plot profit distribution across industries using weights 1}
+ggplot(data_cat1[data_cat1$Funding ==c(0,1), ], aes(x = factor(Funding), y = Change_profit, weight = weight))+  geom_boxplot() + 
+  facet_grid(~industry_sec)
+  #scale_color_manual(values = c("#868686FF", "#EFC000FF"))+
+  labs(x= "Expected profit Change",
+       subtitle="Expected profit Change with and without Funding")+
+  theme(legend.position="bottom")
+```  
+
+
+```{r box plot revenue distribution across industries using weights 1}
+ggplot(data_cat1[data_cat1$Funding ==c(0,1), ], aes(x = factor(Funding), y = Change_Revenue, weight = weight))+  geom_boxplot() + 
+  facet_grid(~industry_sec)
+  #scale_color_manual(values = c("#868686FF", "#EFC000FF"))+
+  labs(x= "Expected profit Change",
+       subtitle="Expected revenue Change with and without Funding")+
+  theme(legend.position="bottom")
+```  
+  
+```{r Revenue Change with fundings vs without fundings in different Industries}
+
+table1 <- data_kpi %>%
+  as_survey(weights = c(weight)) %>%
+  group_by(Funding,industry_sec ) %>%
+  summarise_at(vars(Change_Revenue), list(name = survey_mean), na.rm=TRUE)
+
+
+table1$Funding<-factor(table1$Funding,levels = c("0","1"),labels = c("No","Yes"))
+
+
+ggplot(data=table1, aes(x=name_se, y=industry_sec)) +
+  geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(x = name_se, y = industry_sec,  label = round(name_se,2)), vjust= 0,hjust= 0, size = 3, position = position_dodge(width = 0.5) ) +  
+  scale_fill_brewer(palette="Paired")+
+  facet_grid(~Funding) +
+  labs(x="Revenue Change in %", y="Industry", title="Industry Revenue Change: Aid vs.No Aid Distribution") +
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 1))
+
+```
+
+```{r Profit Change with fundings vs without fundings in different Industries}
+
+table4 <- data_kpi %>%
+  as_survey(weights = c(weight)) %>%
+  group_by(Funding,industry_sec ) %>%
+  summarise_at(vars(Change_profit), list(name = survey_mean), na.rm=TRUE)
+
+
+table4$Funding<-factor(table4$Funding,levels = c("0","1"),labels = c("No","Yes"))
+
+ggplot(data=table4, aes(x=name_se, y=industry_sec)) +
+  geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(x = name_se, y = industry_sec,  label = round(name_se,2)), vjust= 0,hjust= 0, size = 3, position = position_dodge(width = 0.5) ) +  
+  scale_fill_brewer(palette="Paired")+
+  facet_grid(~Funding) +
+  labs(x="Profit Change in %", y="Industry", title="Industry Profit Change: Aid vs.No Aid Distribution") +
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 1))
+```
+
+```{r Revenue Change with fundings vs without fundings in across Company sizes}
+
+table2 <- data_kpi %>%
+  as_survey(weights = c(weight)) %>%
+  group_by(Funding,company_size ) %>%
+  summarise_at(vars(Change_Revenue), list(name = survey_mean), na.rm=TRUE)
+
+
+table2$Funding<-factor(table2$Funding,levels = c("0","1"),labels = c("No","Yes"))
+
+# Revenue Change: with fundings vs without fundings in different Industries
+
+ggplot(data=table2, aes(x=name_se, y=company_size)) +
+  geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(x = name_se, y = company_size,  label = round(name_se,2)), vjust= 0,hjust= 0, size = 3, position = position_dodge(width = 0.5) ) +  
+  scale_fill_brewer(palette="Paired")+
+  facet_grid(~Funding) +
+  labs(x="Revenue Change in %", y="Company Size ", title="Industry Revenue Change with size:Aid vs.No Aid Distribution") +
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 1))
+```
+
+```{r Profit Change with fundings vs without fundings in across Company sizes}
+table3 <- data_kpi %>%
+  as_survey(weights = c(weight)) %>%
+  group_by(Funding,company_size ) %>%
+  summarise_at(vars(Change_profit), list(name = survey_mean), na.rm=TRUE)
+
+
+table3$Funding<-factor(table3$Funding,levels = c("0","1"),labels = c("No","Yes"))
+
+ggplot(data=table3, aes(x=name_se, y=company_size)) +
+  geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(x = name_se, y = company_size,  label = round(name_se,2)), vjust= 0,hjust= 0, size = 3, position = position_dodge(width = 0.5) ) +  
+  scale_fill_brewer(palette="Paired")+
+  facet_grid(~Funding) +
+  labs(x="Profit Change in %", y="Company Size", title="Industry Profit Change with size: Aid vs.No Aid Distribution") +
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 1))
+```
+
+
+## LOGIT Model
+Perform logistic regression to see if company size and industry type have any corelation to who receives the funding.
+
+```{r  logit model}
+
+fundlogit <- svyglm( Funding ~ industry_sec + company_size, design =data_survey, family = "binomial")
+summary(fundlogit)
+confint(fundlogit)
+#wald.test(b= coef(fundlogit), Sigma = vcov(fundlogit), Terms = 2:5)
+```
+
+## Regression Analysis
+
+Perform regression analysis to see how revenue and profit changes due to Aids provided, Industry type, Company size
+
+```{r  regression analysis }
+
+reg_revenue_wt <- svyglm( Change_Revenue ~Funding *( industry_sec + company_size), design =data_survey)
+summary(reg_revenue_wt)
+
+reg_profit_wt <- svyglm( Change_profit ~Funding * ( industry_sec + company_size), design =data_survey)
+summary(reg_profit_wt)
+
+
+
+```
+
+
+## Propensity Score matching
+
+```{r create PSM groups}
+
+data_psm <- data_cat1 %>% select(Funding  ,industry_sec, company_size , Change_Revenue, weight) %>% drop_na()
+
+match_obj <- matchit(Funding ~  industry_sec + company_size  ,
+                     data = data_psm, method = "nearest", distance ="glm",
+                     
+                     replace = FALSE
+                     )
+summary(match_obj)
+#plotting the balance between those given funding and others which didn't get
+
+plot(match_obj, type = "hist", interactive = FALSE)
+plot(summary(match_obj), abs = FALSE)
+
+
+
+matched_data <- match.data(match_obj)
+
+res <- lm(Change_Revenue ~  Funding *( industry_sec + company_size) , data= matched_data, weights = weight )
+summary(res)
+
+#profit
+
+data_psm_prof <- data_cat1 %>% select(Funding ,industry_sec, company_size , Change_profit, weight) %>% drop_na()
+
+match_obj1 <- matchit(Funding ~  industry_sec + company_size  ,
+                     data = data_psm_prof, method = "nearest", distance ="glm",
+                     
+                     replace = FALSE
+                     )
+summary(match_obj1)
+#plotting the balance between those given funding and others which didn't get
+
+plot(match_obj1, type = "hist", interactive = FALSE)
+plot(summary(match_obj1), abs = FALSE)
+
+
+
+matched_data1 <- match.data(match_obj1)
+res_profit <- lm(Change_profit ~  Funding *( industry_sec + company_size) , data= matched_data1, weights = weight )
+summary(res_profit)
+
+
+```
+
+
+
+
+```{r revenue distribution with and without funding weights on matched data}
+
+
+matched_data  %>% 
+ggplot( mapping =aes(x = Change_Revenue, weight = weight, color = Funding))+  geom_density() + 
+  #scale_color_manual(values = c("#868686FF", "#EFC000FF"))+
+  labs(x= "Expected Revenue Change",
+       subtitle="Expected Revenue Change with and without Funding")+
+  theme(legend.position="bottom")
+
+
+matched_data1  %>% 
+ggplot( mapping =aes(x = Change_profit, weight = weight, color = Funding))+  geom_density() + 
+  #scale_color_manual(values = c("#868686FF", "#EFC000FF"))+
+  labs(x= "Expected Profit Change",
+       subtitle="Expected Profit Change with and without Funding")+
+  theme(legend.position="bottom")
+
+
+
+```
+
+
+
+
+
+
