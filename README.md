@@ -3,8 +3,8 @@
 The project aims to explore the impact of financial support on the performance of SMEs and identify the factors influencing the effectiveness of fundings. We use a confidential survey wave 4 data provided by German Business Panel (GBP), encompassing feedback from German companies on company information, funding reception details, and performance expectations.
 
 ## Authors
- Minal Singhania
- Lan Luo
+ Minal Singhania <br>
+ Lan Luo <br>
  Academic Supervisor : Prof. Stefan Bender
  
 ## Data
